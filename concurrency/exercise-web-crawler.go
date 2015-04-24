@@ -2,6 +2,7 @@ package main
 
 import (
   "fmt"
+  "sync"
 )
 
 type Fetcher interface {
@@ -10,32 +11,33 @@ type Fetcher interface {
   Fetch(url string) (body string, urls []string, err error)
 }
 
+var visited = struct {
+  urls map[string]bool
+  mutex sync.Mutex
+}{urls: make(map[string]bool)}
+
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
 func Crawl(url string, depth int, fetcher Fetcher) {
-  // TODO: Fetch URLs in parallel.
-  // TODO: Don't fetch the same URL twice.
-  // This implementation doesn't do either:
-  visited := make(map[string]bool)
-  crawl(url, depth, fetcher, visited)
-}
-
-func crawl(url string, depth int, fetcher Fetcher, visited map[string]bool) {
   if depth <= 0 {
     return
   }
-  if _, ok := visited[url]; ok {
+  visited.mutex.Lock()
+  if _, ok := visited.urls[url]; ok {
+    visited.mutex.Unlock()
     return // already visited
   }
+  visited.urls[url] = true // record visit
+  visited.mutex.Unlock()
+
   body, urls, err := fetcher.Fetch(url)
-  visited[url] = true // record visited urls
   if err != nil {
     fmt.Println(err)
     return
   }
   fmt.Printf("found: %s %q\n", url, body)
   for _, u := range urls {
-    crawl(u, depth-1, fetcher, visited)
+    Crawl(u, depth-1, fetcher)
   }
   return
 }
