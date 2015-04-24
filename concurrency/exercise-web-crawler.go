@@ -3,6 +3,8 @@ package main
 import (
   "fmt"
   "sync"
+  "log"
+  "os"
 )
 
 type Fetcher interface {
@@ -16,30 +18,50 @@ var visited = struct {
   mutex sync.Mutex
 }{urls: make(map[string]bool)}
 
+var logger = log.New(os.Stdout, "", 0)
+
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
 func Crawl(url string, depth int, fetcher Fetcher) {
+  crawl(url, depth, fetcher)
+}
+
+// helper to Crawl that returns error status
+func crawl(url string, depth int, fetcher Fetcher) error {
   if depth <= 0 {
-    return
+    return fmt.Errorf("max depth reached")
   }
   visited.mutex.Lock()
   if _, ok := visited.urls[url]; ok {
     visited.mutex.Unlock()
-    return // already visited
+    return fmt.Errorf("already fetched: %s", url)
   }
   visited.urls[url] = true // record visit
   visited.mutex.Unlock()
 
   body, urls, err := fetcher.Fetch(url)
   if err != nil {
-    fmt.Println(err)
-    return
+    return err
   }
-  fmt.Printf("found: %s %q\n", url, body)
-  for _, u := range urls {
-    Crawl(u, depth-1, fetcher)
+  logger.Printf("found: %s %q\n", url, body)
+  done := make(chan string, len(urls))
+  for i, u := range urls {
+    logger.Printf("-> [%s] crawling child %d/%d: %s\n",
+                url, i, len(urls), u)
+    go func(u string) {
+      err := crawl(u, depth-1, fetcher)
+      if err != nil {
+        logger.Printf("[%s] %v\n", url, err)
+      }
+      done <- u
+    }(u)
   }
-  return
+  for i := 0; i < len(urls); i++ {
+    logger.Printf("<- [%s] waiting for child %d/%d\n", url, i, len(urls))
+    u := <- done
+    logger.Printf("<- done with %s\n", u)
+  }
+  return nil
 }
 
 func main() {
