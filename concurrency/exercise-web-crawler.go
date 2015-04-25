@@ -16,17 +16,26 @@ func Crawl(url string, depth int, fetcher Fetcher) {
   // TODO: Fetch URLs in parallel.
   // TODO: Don't fetch the same URL twice.
   // This implementation doesn't do either:
+  visited := make(map[string]bool)
+  crawl(url, depth, fetcher, visited)
+}
+
+func crawl(url string, depth int, fetcher Fetcher, visited map[string]bool) {
   if depth <= 0 {
     return
   }
+  if _, ok := visited[url]; ok {
+    return // already visited
+  }
   body, urls, err := fetcher.Fetch(url)
+  visited[url] = true // record visited urls
   if err != nil {
     fmt.Println(err)
     return
   }
   fmt.Printf("found: %s %q\n", url, body)
   for _, u := range urls {
-    Crawl(u, depth-1, fetcher)
+    crawl(u, depth-1, fetcher, visited)
   }
   return
 }
